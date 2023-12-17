@@ -50,8 +50,6 @@ contract NFTMarket is ERC721URIStorage, Ownable {
       revert NFTMarket__NullPrice();
     }
     
-    //approve our contract to transfer ownership of the token
-    approve(address(this), tokenId);
     transferFrom(msg.sender, address(this), tokenId); //change the ownership of token to this contract
 
     //create listing
