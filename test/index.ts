@@ -2,7 +2,16 @@ import { expect } from "chai"
 import { ethers } from "hardhat"
 import { NFTMarket } from "../typechain-types"
 import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers"
-import { BigNumberish, EventLog, Result } from "ethers"
+import {
+  BigNumberish,
+  Contract,
+  EventLog,
+  Result,
+  formatEther,
+  formatUnits,
+  parseEther,
+  parseUnits,
+} from "ethers"
 
 describe("NFTMarket", () => {
   let nftMarket: NFTMarket
@@ -23,7 +32,9 @@ describe("NFTMarket", () => {
     return tokenId
   }
 
-  const createAndListNFT = async (price: BigNumberish) => {
+  const createAndListNFT = async (
+    price: BigNumberish
+  ): Promise<BigNumberish> => {
     const tokenId = await createNFT("some-token-uri")
     const tx = await nftMarket.listNFT(tokenId, price)
     await tx.wait()
@@ -84,6 +95,12 @@ describe("NFTMarket", () => {
       const tx = await nftMarket.listNFT(tokenId, price) //connect the second one
       const txReceipt = await tx.wait()
       const args = (txReceipt?.logs[2] as EventLog).args as Result
+
+      //ownership should be transfered to the contract
+      const ownerAddress = await nftMarket.ownerOf(tokenId)
+      expect(ownerAddress).to.equal(await nftMarket.getAddress())
+
+      //event should have the right arguments
       expect(args[0]).to.equal(tokenId)
       expect(args[1]).to.equal(await nftMarket.getAddress())
       expect(args[2]).to.equal("") //this SHOULD be empty
@@ -91,12 +108,10 @@ describe("NFTMarket", () => {
     })
   })
   describe("buyNFT", async () => {
-    let tokenId: BigNumberish
-    beforeEach(async () => {
-      const tokenURI = "some-token-uri"
-      tokenId = await createNFT(tokenURI) //created but not listed for sale
-    })
     it("should revert if NFT is not listed for sale", async () => {
+      const tokenURI = "some-token-uri"
+      const tokenId = await createNFT(tokenURI) //created but not listed for sale
+      //passing in a wrong token id of 12
       await expect(nftMarket.buyNFT(12)).to.be.revertedWithCustomError(
         nftMarket,
         "NFTMarket__NftNotFound()"
@@ -112,15 +127,129 @@ describe("NFTMarket", () => {
         "NFTMarket__IncorrectPrice()"
       )
     })
-    it("should transfer ownership to buyer and send price to seller", async () => {
-      const price = 12;
-      const tokenId = await createAndListNFT(12)
-      const tx = await nftMarket.connect(signers[1]).buyNFT(tokenId, {value: price})
-      const txReceipt = await tx.wait();
+    it("should transfer ownership to the buyer and send the price to the seller", async () => {
+      const price = parseEther("1") //converts ether into wei
+      const tokenId = await createAndListNFT(price)
+      const initialContractBalance = await ethers.provider.getBalance(
+        await nftMarket.getAddress()
+      )
 
-      //check if 95 of the price has been added in seller's account
-      // 5% was kept in contract's balance
-      // NFT ownership was transfered successfully
+      // Check if 95% of the price has been added to the seller's account
+      const oldSellerBalance = await signers[0].provider.getBalance(
+        signers[0].address
+      )
+
+      // Buy NFT with signer 2
+      const tx = await nftMarket
+        .connect(signers[1])
+        .buyNFT(tokenId, { value: price })
+      const txReceipt = await tx.wait()
+
+      // New seller balance
+      const newSellerBalance = await signers[0].provider.getBalance(
+        signers[0].address
+      )
+
+      const difference = newSellerBalance - oldSellerBalance
+      const sellerProfit = (price * BigInt(95)) / BigInt(100) //95% of the actual price
+
+      //1. 95% of the price was added to the seller balance
+      expect(difference).to.equal(sellerProfit)
+      //2. check if 5% was kept in contract's balance
+      const newContractBalance = await ethers.provider.getBalance(
+        await nftMarket.getAddress()
+      )
+      const contractBalanceDifference =
+        newContractBalance - initialContractBalance
+      const fee = price - sellerProfit
+      expect(contractBalanceDifference).to.equal(fee)
+
+      //check if owner is correct
+      const ownerAddress = await nftMarket.ownerOf(tokenId)
+      expect(ownerAddress).to.equal(signers[1].address)
+
+      //check if event has correct args
+      const args = (txReceipt?.logs[2] as EventLog).args as Result
+      expect(args[0]).to.equal(tokenId)
+      expect(args[1]).to.equal(ownerAddress)
+      expect(args[2]).to.equal("")
+      expect(args[3]).to.equal(0)
+    })
+  })
+  describe("cancelListing", async () => {
+    it("should revert if listing doesn't exist", async () => {
+      const tokenURI = "some-token-uri"
+      const tokenId = await createNFT(tokenURI)
+
+      const tx = nftMarket.cancelListing(tokenId)
+      expect(tx).to.be.revertedWithCustomError(
+        nftMarket,
+        "NFTMarket__NftNotFound()"
+      )
+    })
+    it("should revert if someone other than owner tries to cancel nft listing", async () => {
+      const price = parseEther("1")
+      const tokenId = await createAndListNFT(price)
+
+      await expect(
+        nftMarket.connect(signers[1]).cancelListing(tokenId)
+      ).to.be.revertedWithCustomError(nftMarket, "NFTMarket__NotNftOwner()")
+    })
+    it("should transfer ownership back to seller", async () => {
+      const price = parseEther("1")
+      const tokenId = await createAndListNFT(price)
+
+      expect(await nftMarket.ownerOf(tokenId)).to.equal(
+        await nftMarket.getAddress()
+      )
+      const tx = await nftMarket.cancelListing(tokenId)
+
+      expect(await nftMarket.ownerOf(tokenId)).to.equal(signers[0].address)
+
+      //check nft transfer event
+      const txReceipt = await tx.wait()
+      const args = (txReceipt?.logs[2] as EventLog).args as Result
+      expect(args[0]).to.equal(tokenId)
+      expect(args[1]).to.equal(signers[0].address)
+      expect(args[2]).to.equal("")
+      expect(args[3]).to.equal(0)
+    })
+  })
+  describe("withdrawFunds", () => {
+    it("should revert if called by a signer other than the owner", async () => {
+      const tx = nftMarket.connect(signers[1]).withdrawFunds()
+      expect(tx).to.be.revertedWith("Ownable: caller is not the owner")
+    })
+    it("should revert if contract balance is zero", async () => {
+      await nftMarket.withdrawFunds()
+      await expect(nftMarket.withdrawFunds()).to.be.revertedWithCustomError(
+        nftMarket,
+        "NFTMarket__NoFundsToWithdraw()"
+      )
+    })
+    it("should transfer all funds to the owner", async () => {
+      const price = parseEther("1")
+      const tokenId = await createAndListNFT(price)
+      await nftMarket.connect(signers[1]).buyNFT(tokenId, { value: price })
+
+      const oldOwnerBalance = await signers[0].provider.getBalance(
+        signers[0].address
+      )
+
+      const tx = await nftMarket.withdrawFunds()
+      const txReceipt = await tx.wait()
+
+      //calculate gas price used by withdrawFunds function
+      const gasPrice = txReceipt?.gasUsed! * txReceipt?.gasPrice!
+
+      const newOwnerBalance = await signers[0].provider.getBalance(
+        signers[0].address
+      )
+
+      const fivePercentOfPrice = (price * 5n) / 100n
+      expect(newOwnerBalance).to.equal(
+        oldOwnerBalance + fivePercentOfPrice - gasPrice
+      )
     })
   })
 })

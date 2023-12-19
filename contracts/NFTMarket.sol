@@ -70,7 +70,8 @@ contract NFTMarket is ERC721URIStorage, Ownable {
     }
 
     //currently, the owner is the market, bc it was listed for sale
-    transferFrom(address(this), msg.sender, tokenId);
+    // only the contract can call this transfer ownership function, because the msg.sender in this case is not authorized/approved to change ownership, and doesn't own the NFT token, so
+    ERC721(address(this)).transferFrom(address(this), msg.sender, tokenId);
 
     clearListing(tokenId); //remove from listing
 
@@ -88,6 +89,7 @@ contract NFTMarket is ERC721URIStorage, Ownable {
     if(listing.seller != msg.sender){
       revert NFTMarket__NotNftOwner();
     }
+    ERC721(address(this)).transferFrom(address(this), msg.sender, tokenId); //transfer ownership back to seller
     clearListing(tokenId);
     emit NFTTransfer(tokenId, msg.sender, "", 0);
   }
