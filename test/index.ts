@@ -63,9 +63,10 @@ describe("NFTMarket", () => {
       //assert that NFTTransfer event has correct arguments
       const args = (txReceipt?.logs[1] as EventLog).args as Result
       expect(args[0]).to.equal(tokenId)
-      expect(args[1]).to.equal(ownerAddress)
-      expect(args[2]).to.equal(tokenURI)
-      expect(args[3]).to.equal(0) // This SHOULD be zero
+      expect(args[1]).to.equal(ethers.ZeroAddress)
+      expect(args[2]).to.equal(ownerAddress)
+      expect(args[3]).to.equal(tokenURI)
+      expect(args[4]).to.equal(0) // This SHOULD be zero
     })
   })
 
@@ -102,9 +103,10 @@ describe("NFTMarket", () => {
 
       //event should have the right arguments
       expect(args[0]).to.equal(tokenId)
-      expect(args[1]).to.equal(await nftMarket.getAddress())
-      expect(args[2]).to.equal("") //this SHOULD be empty
-      expect(args[3]).to.equal(price) // the price must match
+      expect(args[1]).to.equal(signers[0].address)
+      expect(args[2]).to.equal(await nftMarket.getAddress())
+      expect(args[3]).to.equal("") //this SHOULD be empty
+      expect(args[4]).to.equal(price) // the price must match
     })
   })
   describe("buyNFT", async () => {
@@ -171,9 +173,10 @@ describe("NFTMarket", () => {
       //check if event has correct args
       const args = (txReceipt?.logs[2] as EventLog).args as Result
       expect(args[0]).to.equal(tokenId)
-      expect(args[1]).to.equal(ownerAddress)
-      expect(args[2]).to.equal("")
-      expect(args[3]).to.equal(0)
+      expect(args[1]).to.equal(await nftMarket.getAddress())
+      expect(args[2]).to.equal(ownerAddress)
+      expect(args[3]).to.equal("")
+      expect(args[4]).to.equal(0)
     })
   })
   describe("cancelListing", async () => {
@@ -210,9 +213,10 @@ describe("NFTMarket", () => {
       const txReceipt = await tx.wait()
       const args = (txReceipt?.logs[2] as EventLog).args as Result
       expect(args[0]).to.equal(tokenId)
-      expect(args[1]).to.equal(signers[0].address)
-      expect(args[2]).to.equal("")
-      expect(args[3]).to.equal(0)
+      expect(args[1]).to.equal(await nftMarket.getAddress())
+      expect(args[2]).to.equal(signers[0].address)
+      expect(args[3]).to.equal("")
+      expect(args[4]).to.equal(0)
     })
   })
   describe("withdrawFunds", () => {
